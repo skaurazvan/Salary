@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Salary Tracker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0a0e17; }
+    input[type=number], input[type=text] {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 8px; color: #e2e8f0;
+      padding: 10px 14px; font-family: 'JetBrains Mono', monospace; font-size: 16px;
+      width: 100%; outline: none; transition: border-color 0.2s;
+    }
+    input:focus { border-color: #38bdf8; box-shadow: 0 0 0 3px rgba(56,189,248,0.15); }
+    input::-webkit-inner-spin-button { opacity: 1; }
+  </style>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.2/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useMemo, useEffect, useCallback } = React;
+
+    const MONTHLY_BASE = 3055.36;
+    const HOURLY_RATE = 16.79;
+    const MONTHLY_SHIFT_ALLOWANCE = 458.29;
+    const OT_RATE = HOURLY_RATE * 1.33;
+    const SHIFT_OT_RATE = HOURLY_RATE * 0.15;
+    const PENSION_RATE = 0.04;
+    const PENSION_LOWER = 520;
+    const AVG_SHIFTS = 15.2;
+    const PA = 12630;
+    const BASIC_LIM = 50270;
+    const HIGHER_LIM = 125140;
+    const NI_THR = 12570 / 12;
+    const NI_UPR = 50270 / 12;
+
+    const SCHED = [
+      { month: "April",     payDate: "2nd Apr",  cutOff: "16 Feb - 15 Mar" },
+      { month: "May",       payDate: "6th May",  cutOff: "16 Mar - 12 Apr" },
+      { month: "June",      payDate: "5th Jun",  cutOff: "13 Apr - 10 May" },
+      { month: "July",      payDate: "6th Jul",  cutOff: "11 May - 14 Jun" },
+      { month: "August",    payDate: "6th Aug",  cutOff: "15 Jun - 19 Jul" },
+      { month: "September", payDate: "4th Sep",  cutOff: "20 Jul - 16 Aug" },
+      { month: "October",   payDate: "6th Oct",  cutOff: "17 Aug - 13 Sep" },
+      { month: "November",  payDate: "6th Nov",  cutOff: "14 Sep - 18 Oct" },
+      { month: "December",  payDate: "4th Dec",  cutOff: "19 Oct - 15 Nov" },
+      { month: "January",   payDate: "6th Jan",  cutOff: "10 Nov - 7 Dec" },
+      { month: "February",  payDate: "6th Feb",  cutOff: "8 Dec - 11 Jan" },
+      { month: "March",     payDate: "6th Mar",  cutOff: "12 Jan - 15 Feb" },
+    ];
+
+    const LABELS = SCHED.map((s, i) => s.month + " (M" + (i + 1) + ")");
+
+    function p(n) {
+      const a = Math.abs(n);
+      return (n < 0 ? "-" : "") + "\u00a3" + a.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    }
+
+    function cumTax(gross, m) {
+      const cPA = (PA / 12) * m;
+      const cB = (BASIC_LIM / 12) * m;
+      const cH = (HIGHER_LIM / 12) * m;
+      const t = Math.max(0, gross - cPA);
+      const bBand = Math.max(0, cB - cPA);
+      const hBand = Math.max(0, cH - cPA);
+      if (t <= bBand) return t * 0.20;
+      if (t <= hBand) return bBand * 0.20 + (t - bBand) * 0.40;
+      return bBand * 0.20 + (hBand - bBand) * 0.40 + (t - hBand) * 0.45;
+    }
+
+    function mNI(g) {
+      if (g <= NI_THR) return { total: 0, lines: [] };
+      const lines = [];
+      lines.push({ l: "NI @ 8%", v: (Math.min(g, NI_UPR) - NI_THR) * 0.08 });
+      if (g > NI_UPR) lines.push({ l: "NI @ 2% (upper)", v: (g - NI_UPR) * 0.02 });
+      return { total: lines.reduce((s, x) => s + x.v, 0), lines };
+    }
+
+    function calcPred(d) {
+      const ot = parseFloat(d.otHours) || 0;
+      const sick = parseInt(d.sickDays) || 0;
+      const ext = parseFloat(d.extraDed) || 0;
+      const bon = parseFloat(d.bonus) || 0;
+      const eff = Math.max(0, AVG_SHIFTS - sick);
+      const sa = MONTHLY_SHIFT_ALLOWANCE * (eff / AVG_SHIFTS);
+      const otPay = ot * OT_RATE;
+      const sOt = ot * SHIFT_OT_RATE;
+      const bonAmt = MONTHLY_BASE * (bon / 100);
+      const gross = MONTHLY_BASE + sa + otPay + sOt + bonAmt - ext;
+      const ni = mNI(gross);
+      const pen = Math.max(0, gross - PENSION_LOWER) * PENSION_RATE;
+      return { gross, sa, otPay, sOt, bonAmt, ext, ni, pen, ot, sick, bon };
+    }
+
+    const STORE_KEY = "salary-tracker-v2";
+
+    function emptyMonth(i) {
+      return {
+        label: LABELS[i], idx: i, mode: "prediction",
+        otHours: "", sickDays: "", extraDed: "", bonus: "",
+        actualGross: "", actualTax: "", actualNI: "", actualPension: "", actualNet: "", actualNotes: "",
+      };
+    }
+
+    function defaultMonths() {
+      const months = [];
+      for (let i = 0; i < 12; i++) months.push(emptyMonth(i));
+      months[0].mode = "actual";
+      months[0].actualGross = "3757.20";
+      months[0].actualTax = "540.60";
+      months[0].actualNI = "216.74";
+      months[0].actualPension = "97.77";
+      months[0].actualNet = "1802.09";
+      months[0].actualNotes = "Net deduction 1100";
+      return months;
+    }
+
+    function loadData() {
+      try {
+        const raw = localStorage.getItem(STORE_KEY);
+        if (raw) {
+          const d = JSON.parse(raw);
+          if (d.months && d.months.length === 12) return d.months;
+        }
+      } catch (e) {}
+      return defaultMonths();
+    }
+
+    function saveData(months) {
+      try { localStorage.setItem(STORE_KEY, JSON.stringify({ months })); } catch (e) {}
+    }
+
+    /* ---- Sub-components ---- */
+    function R({ l, v, c = "#e2e8f0", b }) {
+      return (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 12, color: "#94a3b8" }}>{l}</span>
+            {b && <span style={{ fontSize: 8, color: "#64748b", background: "rgba(255,255,255,0.06)", padding: "2px 5px", borderRadius: 4 }}>{b}</span>}
+          </div>
+          <span style={{ fontSize: 13, fontWeight: 600, color: c }}>{v}</span>
+        </div>
+      );
+    }
+
+    function T({ l, v, c = "#e2e8f0" }) {
+      return (
+        <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 14px", background: "rgba(255,255,255,0.04)", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#e2e8f0" }}>{l}</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: c }}>{v}</span>
+        </div>
+      );
+    }
+
+    const secHead = (color) => ({
+      padding: "10px 14px", borderBottom: "1px solid rgba(255,255,255,0.06)",
+      fontSize: 11, fontWeight: 600, color,
+      fontFamily: "'Space Grotesk', sans-serif", textTransform: "uppercase", letterSpacing: 1,
+    });
+
+    const cardStyle = {
+      background: "rgba(255,255,255,0.03)",
+      border: "1px solid rgba(255,255,255,0.08)",
+      borderRadius: 12, overflow: "hidden",
+    };
+
+    const labelStyle = { fontSize: 10, color: "#64748b", display: "block", marginBottom: 5 };
+
+    /* ---- Main App ---- */
+    function App() {
+      const [tab, setTab] = useState("months");
+      const [months, setMonths] = useState(loadData);
+      const [editing, setEditing] = useState(null);
+
+      useEffect(() => { saveData(months); }, [months]);
+
+      const updateField = (idx, field, val) => {
+        const u = [...months];
+        u[idx] = { ...u[idx], [field]: val };
+        setMonths(u);
+      };
+
+      const toggleMode = (idx) => {
+        const u = [...months];
+        u[idx] = { ...u[idx], mode: u[idx].mode === "prediction" ? "actual" : "prediction" };
+        setMonths(u);
+      };
+
+      const monthData = useMemo(() => {
+        return months.map((m) => {
+          if (m.mode === "actual" && m.actualGross) {
+            return { gross: parseFloat(m.actualGross) || 0, tax: parseFloat(m.actualTax) || 0, isActual: true };
+          }
+          const pred = calcPred(m);
+          return { gross: pred.gross, tax: null, isActual: false, pred };
+        });
+      }, [months]);
+
+      const cumData = useMemo(() => {
+        const result = [];
+        let runGross = 0, runTaxPaid = 0;
+        for (let i = 0; i < 12; i++) {
+          const md = monthData[i];
+          runGross += md.gross;
+          const taxDueNow = cumTax(runGross, i + 1);
+          if (md.isActual) {
+            runTaxPaid += md.tax;
+            result.push({ ...md, monthTax: md.tax, cumGross: runGross, cumTaxDue: taxDueNow, cumTaxPaid: runTaxPaid });
+          } else {
+            const mTax = Math.max(0, taxDueNow - runTaxPaid);
+            const ni = md.pred.ni;
+            const pen = md.pred.pen;
+            const net = md.gross - mTax - ni.total - pen;
+            runTaxPaid += mTax;
+            result.push({ ...md, monthTax: mTax, ni, pen, net, cumGross: runGross, cumTaxDue: taxDueNow, cumTaxPaid: runTaxPaid });
+          }
+        }
+        return result;
+      }, [monthData]);
+
+      const calMonth = new Date().getMonth();
+      const calToTax = [9, 10, 11, 0, 1, 2, 3, 4, 5, 6, 7, 8];
+      const currentTaxIdx = calToTax[calMonth];
+
+      const tabBtn = (id, label) => (
+        <button onClick={() => { setTab(id); setEditing(null); }} style={{
+          flex: 1, padding: "10px 0", borderRadius: 8, border: "none",
+          fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "'Space Grotesk', sans-serif",
+          background: tab === id ? "linear-gradient(135deg, rgba(56,189,248,0.2), rgba(129,140,248,0.2))" : "transparent",
+          color: tab === id ? "#e2e8f0" : "#64748b",
+        }}>{label}</button>
+      );
+
+      return (
+        <div style={{
+          minHeight: "100vh",
+          background: "linear-gradient(160deg, #0a0e17 0%, #131a2e 50%, #0d1220 100%)",
+          color: "#e2e8f0", fontFamily: "'JetBrains Mono', 'SF Mono', monospace", padding: "20px 16px",
+        }}>
+          {/* Header */}
+          <div style={{ textAlign: "center", marginBottom: 20 }}>
+            <div style={{ fontSize: 10, letterSpacing: 3, textTransform: "uppercase", color: "#64748b", marginBottom: 4, fontFamily: "'Space Grotesk', sans-serif" }}>
+              HellermannTyton UK
+            </div>
+            <h1 style={{
+              fontFamily: "'Space Grotesk', sans-serif", fontSize: 24, fontWeight: 700,
+              background: "linear-gradient(135deg, #38bdf8, #818cf8, #c084fc)",
+              WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
+            }}>Salary Tracker</h1>
+            <div style={{ fontSize: 10, color: "#475569", marginTop: 3 }}>
+              {"Cumulative PAYE \u00b7 1263L \u00b7 " + p(36664.27) + "/yr \u00b7 Data auto-saved"}
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <div style={{ display: "flex", gap: 4, marginBottom: 16, background: "rgba(255,255,255,0.04)", borderRadius: 10, padding: 4 }}>
+            {tabBtn("months", "Months")}
+            {tabBtn("summary", "Tax YTD")}
+            {tabBtn("schedule", "Schedule")}
+          </div>
+
+          {/* ===== MONTHS LIST ===== */}
+          {tab === "months" && editing === null && (
+            <div>
+              {months.map((m, i) => {
+                const cd = cumData[i];
+                const isCur = i === currentTaxIdx;
+                const net = cd.isActual ? (parseFloat(m.actualNet) || 0) : (cd.net || 0);
+                const hasData = cd.isActual ? !!m.actualGross : !!(m.otHours || m.sickDays || m.bonus || m.extraDed);
+                return (
+                  <div key={i} onClick={() => setEditing(i)} style={{
+                    background: isCur ? "rgba(56,189,248,0.06)" : "rgba(255,255,255,0.02)",
+                    border: "1px solid " + (isCur ? "rgba(56,189,248,0.25)" : "rgba(255,255,255,0.06)"),
+                    borderRadius: 12, padding: "12px 14px", marginBottom: 8, cursor: "pointer",
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: isCur ? "#38bdf8" : "#e2e8f0", fontFamily: "'Space Grotesk', sans-serif" }}>
+                          {(isCur ? "\u25b8 " : "") + m.label}
+                        </div>
+                        <div style={{ fontSize: 10, marginTop: 3, display: "flex", gap: 6, alignItems: "center" }}>
+                          <span style={{
+                            padding: "2px 6px", borderRadius: 4, fontSize: 9, fontWeight: 600,
+                            background: cd.isActual ? "rgba(16,185,129,0.15)" : "rgba(129,140,248,0.15)",
+                            color: cd.isActual ? "#10b981" : "#818cf8",
+                          }}>{cd.isActual ? "ACTUAL" : hasData ? "PREDICTED" : "EMPTY"}</span>
+                          <span style={{ color: "#475569" }}>{"Pay: " + SCHED[i].payDate}</span>
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        {(hasData || cd.isActual) ? (
+                          <React.Fragment>
+                            <div style={{ fontSize: 16, fontWeight: 700, color: "#10b981", fontFamily: "'Space Grotesk', sans-serif" }}>{p(net)}</div>
+                            <div style={{ fontSize: 10, color: "#64748b" }}>{"Gross " + p(cd.gross)}</div>
+                          </React.Fragment>
+                        ) : (
+                          <div style={{ fontSize: 12, color: "#334155" }}>Tap to edit</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ===== EDIT MONTH ===== */}
+          {tab === "months" && editing !== null && (() => {
+            const m = months[editing];
+            const cd = cumData[editing];
+            const pred = m.mode === "prediction" ? calcPred(m) : null;
+            const mTax = cd.monthTax;
+            const ni = cd.isActual ? null : cd.ni;
+            const pen = cd.isActual ? null : cd.pen;
+            const net = cd.isActual ? (parseFloat(m.actualNet) || 0) : cd.net;
+
+            return (
+              <div>
+                <button onClick={() => setEditing(null)} style={{
+                  background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)",
+                  color: "#94a3b8", borderRadius: 8, padding: "8px 16px", fontSize: 12,
+                  cursor: "pointer", fontFamily: "inherit", marginBottom: 14,
+                }}>{"\u2190 Back to all months"}</button>
+
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                  <h2 style={{ fontSize: 18, fontWeight: 700, color: "#e2e8f0", fontFamily: "'Space Grotesk', sans-serif" }}>{m.label}</h2>
+                  <div style={{ fontSize: 9, color: "#475569", textAlign: "right", lineHeight: 1.4 }}>
+                    {"Pay: " + SCHED[editing].payDate}<br />{"OT: " + SCHED[editing].cutOff}
+                  </div>
+                </div>
+
+                {/* Mode toggle */}
+                <div style={{ display: "flex", gap: 4, marginBottom: 16, background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: 3 }}>
+                  {["prediction", "actual"].map(mode => (
+                    <button key={mode} onClick={() => toggleMode(editing)} style={{
+                      flex: 1, padding: "8px 0", borderRadius: 6, border: "none",
+                      fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "'Space Grotesk', sans-serif",
+                      background: m.mode === mode ? (mode === "actual" ? "rgba(16,185,129,0.2)" : "rgba(129,140,248,0.2)") : "transparent",
+                      color: m.mode === mode ? (mode === "actual" ? "#10b981" : "#818cf8") : "#475569",
+                    }}>{mode === "prediction" ? "Prediction" : "Actual (Payslip)"}</button>
+                  ))}
+                </div>
+
+                {/* PREDICTION MODE */}
+                {m.mode === "prediction" && (
+                  <div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+                      {[
+                        { label: "OT Hours", field: "otHours", step: "0.25" },
+                        { label: "Sick Days", field: "sickDays", step: "1" },
+                        { label: "Net Deduction", field: "extraDed", step: "10" },
+                        { label: "Bonus (%)", field: "bonus", step: "1" },
+                      ].map((f, i) => (
+                        <div key={i}>
+                          <label style={labelStyle}>{f.label}</label>
+                          <input type="number" min="0" step={f.step} value={m[f.field]}
+                            onChange={e => updateField(editing, f.field, e.target.value)} />
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{
+                      background: "linear-gradient(145deg, rgba(16,185,129,0.12), rgba(56,189,248,0.08))",
+                      border: "1px solid rgba(16,185,129,0.25)",
+                      borderRadius: 14, padding: 16, textAlign: "center", marginBottom: 14,
+                    }}>
+                      <div style={{ fontSize: 10, color: "#94a3b8", letterSpacing: 2, textTransform: "uppercase" }}>Predicted Net Pay</div>
+                      <div style={{
+                        fontSize: 34, fontWeight: 700, fontFamily: "'Space Grotesk', sans-serif",
+                        background: "linear-gradient(135deg, #10b981, #38bdf8)",
+                        WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", marginTop: 4,
+                      }}>{p(net)}</div>
+                      <div style={{ fontSize: 10, color: "#64748b", marginTop: 3 }}>{"Gross: " + p(pred.gross)}</div>
+                    </div>
+
+                    <div style={cardStyle}>
+                      <div style={secHead("#94a3b8")}>Payments</div>
+                      <R l="Base Salary" v={p(MONTHLY_BASE)} c="#e2e8f0" />
+                      <R l="Shift Allowance (15%)" v={p(pred.sa)} c="#38bdf8" />
+                      {pred.ot > 0 && <R l={"OT (" + pred.ot + "h x " + p(OT_RATE) + ")"} v={p(pred.otPay)} c="#818cf8" />}
+                      {pred.ot > 0 && <R l={"Shift OT (" + pred.ot + "h x " + p(SHIFT_OT_RATE) + ")"} v={p(pred.sOt)} c="#a78bfa" />}
+                      {pred.bon > 0 && <R l={"Bonus (" + pred.bon + "%)"} v={p(pred.bonAmt)} c="#10b981" />}
+                      {pred.ext > 0 && <R l="Net Deduction" v={p(-pred.ext)} c="#f87171" />}
+                      <T l="Taxable Gross" v={p(pred.gross)} />
+
+                      <div style={secHead("#f87171")}>Deductions (Cumulative PAYE)</div>
+                      <R l="Income Tax" v={"-" + p(mTax)} c="#f87171" b="cumulative" />
+                      {ni && ni.lines.map((x, j) => <R key={j} l={x.l} v={"-" + p(x.v)} c="#f87171" b="per month" />)}
+                      {pen !== null && <R l="Pension (4%)" v={"-" + p(pen)} c="#fb923c" />}
+                      <T l="Total Deductions" v={"-" + p(mTax + (ni ? ni.total : 0) + (pen || 0))} c="#f87171" />
+                    </div>
+
+                    <div style={{ textAlign: "center", marginTop: 14, fontSize: 11, color: "#475569" }}>
+                      Got your payslip? Switch to "Actual" to enter real values
+                    </div>
+                  </div>
+                )}
+
+                {/* ACTUAL MODE */}
+                {m.mode === "actual" && (
+                  <div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+                      {[
+                        { label: "Gross Pay", field: "actualGross" },
+                        { label: "Tax Paid", field: "actualTax" },
+                        { label: "NI Paid", field: "actualNI" },
+                        { label: "Pension", field: "actualPension" },
+                        { label: "Net Pay", field: "actualNet" },
+                      ].map((f, i) => (
+                        <div key={i}>
+                          <label style={labelStyle}>{f.label}</label>
+                          <input type="number" min="0" step="0.01" value={m[f.field]}
+                            onChange={e => updateField(editing, f.field, e.target.value)} />
+                        </div>
+                      ))}
+                      <div>
+                        <label style={labelStyle}>Notes</label>
+                        <input type="text" value={m.actualNotes || ""} style={{ fontSize: 14 }}
+                          onChange={e => updateField(editing, "actualNotes", e.target.value)} />
+                      </div>
+                    </div>
+
+                    {m.actualNet && (
+                      <div style={{
+                        background: "linear-gradient(145deg, rgba(16,185,129,0.12), rgba(56,189,248,0.08))",
+                        border: "1px solid rgba(16,185,129,0.25)",
+                        borderRadius: 14, padding: 16, textAlign: "center", marginBottom: 14,
+                      }}>
+                        <div style={{ fontSize: 10, color: "#94a3b8", letterSpacing: 2, textTransform: "uppercase" }}>Actual Net Pay</div>
+                        <div style={{
+                          fontSize: 34, fontWeight: 700, fontFamily: "'Space Grotesk', sans-serif",
+                          background: "linear-gradient(135deg, #10b981, #38bdf8)",
+                          WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", marginTop: 4,
+                        }}>{p(parseFloat(m.actualNet) || 0)}</div>
+                        {m.actualNotes && <div style={{ fontSize: 10, color: "#64748b", marginTop: 4, fontStyle: "italic" }}>{m.actualNotes}</div>}
+                      </div>
+                    )}
+
+                    <div style={{ textAlign: "center", fontSize: 11, color: "#475569" }}>
+                      Enter the values from your payslip. These will be used for cumulative PAYE calculations.
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* ===== TAX YTD ===== */}
+          {tab === "summary" && (
+            <div>
+              <div style={{ ...cardStyle, padding: 14, marginBottom: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", marginBottom: 6, fontFamily: "'Space Grotesk', sans-serif", textTransform: "uppercase", letterSpacing: 1 }}>
+                  How It Works
+                </div>
+                <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.6 }}>
+                  Months marked "Actual" use your real payslip figures. Months marked "Predicted" 
+                  use your estimates. HMRC calculates tax cumulatively across all months. Update each 
+                  month after payday for the most accurate picture.
+                </div>
+              </div>
+
+              {(() => {
+                const lastActual = months.reduce((a, m, i) => m.mode === "actual" && m.actualGross ? i : a, -1);
+                const totalActualGross = months.filter(m => m.mode === "actual").reduce((s, m) => s + (parseFloat(m.actualGross) || 0), 0);
+                const totalActualTax = months.filter(m => m.mode === "actual").reduce((s, m) => s + (parseFloat(m.actualTax) || 0), 0);
+                const actualCount = months.filter(m => m.mode === "actual" && m.actualGross).length;
+                const predCount = months.filter(m => m.mode === "prediction" && (m.otHours || m.sickDays || m.bonus || m.extraDed)).length;
+                const totalGross12 = cumData[11].cumGross;
+                const annualTaxDue = cumTax(totalGross12, 12);
+                const ytdTaxDue = lastActual >= 0 ? cumTax(totalActualGross, lastActual + 1) : 0;
+                const overUnder = totalActualTax - ytdTaxDue;
+
+                return (
+                  <div style={cardStyle}>
+                    <div style={secHead("#94a3b8")}>Year-to-Date Summary</div>
+                    <R l="Actual months entered" v={actualCount + " of 12"} c="#10b981" />
+                    <R l="Predicted months" v={predCount + ""} c="#818cf8" />
+                    <R l="Actual gross (YTD)" v={p(totalActualGross)} c="#e2e8f0" />
+                    <R l="Actual tax paid (YTD)" v={p(totalActualTax)} c="#f87171" />
+                    <R l={"Tax due by M" + (lastActual + 1) + " (HMRC)"} v={p(ytdTaxDue)} c="#818cf8" />
+                    <R l={overUnder >= 0 ? "Overpaid (refunded)" : "Underpaid (catch-up)"} v={p(Math.abs(overUnder))} c={overUnder >= 0 ? "#10b981" : "#f59e0b"} />
+
+                    <div style={{ ...secHead("#818cf8"), marginTop: 4 }}>Full Year Forecast</div>
+                    <R l="Projected annual gross" v={p(totalGross12)} c="#e2e8f0" />
+                    <R l="Projected annual tax" v={p(annualTaxDue)} c="#f87171" />
+                    <R l="Personal allowance" v={p(PA)} c="#64748b" />
+                    <R l={"PA used (" + actualCount + " months)"} v={p((PA / 12) * actualCount)} c="#64748b" />
+                    <R l="PA remaining" v={p(PA - (PA / 12) * actualCount)} c="#64748b" />
+                  </div>
+                );
+              })()}
+
+              <div style={{ ...cardStyle, marginTop: 14 }}>
+                <div style={secHead("#94a3b8")}>Month-by-Month</div>
+                <div style={{
+                  display: "grid", gridTemplateColumns: "2fr 1.2fr 1.2fr 1.2fr",
+                  padding: "6px 12px", fontSize: 8, color: "#475569", textTransform: "uppercase", letterSpacing: 1,
+                  borderBottom: "1px solid rgba(255,255,255,0.04)",
+                }}>
+                  <span>Month</span><span>Gross</span><span>Tax</span><span>Net</span>
+                </div>
+                {months.map((m, i) => {
+                  const cd = cumData[i];
+                  const net = cd.isActual ? (parseFloat(m.actualNet) || 0) : (cd.net || 0);
+                  const hasData = cd.isActual || m.otHours || m.sickDays || m.bonus || m.extraDed;
+                  return (
+                    <div key={i} style={{
+                      display: "grid", gridTemplateColumns: "2fr 1.2fr 1.2fr 1.2fr",
+                      padding: "7px 12px", fontSize: 11,
+                      borderBottom: "1px solid rgba(255,255,255,0.03)",
+                      opacity: hasData ? 1 : 0.4,
+                    }}>
+                      <span style={{ color: cd.isActual ? "#10b981" : "#94a3b8", fontWeight: 600, fontSize: 10 }}>
+                        {SCHED[i].month.substring(0, 3)}{cd.isActual ? " \u2713" : ""}
+                      </span>
+                      <span style={{ color: "#94a3b8" }}>{hasData ? p(cd.gross) : "-"}</span>
+                      <span style={{ color: "#f87171" }}>{hasData ? p(cd.monthTax) : "-"}</span>
+                      <span style={{ color: "#10b981", fontWeight: 600 }}>{hasData ? p(net) : "-"}</span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <button onClick={() => {
+                if (confirm("Reset all saved data to defaults?")) {
+                  const d = defaultMonths();
+                  setMonths(d);
+                  localStorage.removeItem(STORE_KEY);
+                }
+              }} style={{
+                display: "block", margin: "20px auto 0", background: "rgba(248,113,113,0.1)",
+                border: "1px solid rgba(248,113,113,0.25)", borderRadius: 8,
+                color: "#f87171", padding: "10px 20px", fontSize: 12, cursor: "pointer", fontFamily: "inherit",
+              }}>Reset All Data</button>
+            </div>
+          )}
+
+          {/* ===== SCHEDULE ===== */}
+          {tab === "schedule" && (
+            <div style={cardStyle}>
+              <div style={{
+                display: "grid", gridTemplateColumns: "2fr 1.5fr 2.5fr",
+                padding: "10px 12px", background: "rgba(255,255,255,0.06)",
+                fontSize: 9, fontWeight: 700, color: "#64748b",
+                textTransform: "uppercase", letterSpacing: 1, fontFamily: "'Space Grotesk', sans-serif",
+              }}>
+                <span>Month</span><span>Pay Date</span><span>OT Cut-off</span>
+              </div>
+              {SCHED.map((row, i) => {
+                const isCur = i === currentTaxIdx;
+                return (
+                  <div key={i} style={{
+                    display: "grid", gridTemplateColumns: "2fr 1.5fr 2.5fr",
+                    padding: "10px 12px", borderTop: "1px solid rgba(255,255,255,0.04)",
+                    background: isCur ? "rgba(56,189,248,0.08)" : "transparent", fontSize: 12,
+                  }}>
+                    <span style={{ color: isCur ? "#38bdf8" : "#94a3b8", fontWeight: isCur ? 700 : 400 }}>
+                      {(isCur ? "\u25b8 " : "") + row.month}
+                    </span>
+                    <span style={{ color: isCur ? "#e2e8f0" : "#64748b" }}>{row.payDate}</span>
+                    <span style={{ color: isCur ? "#818cf8" : "#475569", fontSize: 11 }}>{row.cutOff}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <div style={{ textAlign: "center", marginTop: 18, fontSize: 9, color: "#334155" }}>
+            {"Estimates only \u00b7 Cumulative PAYE \u00b7 1263L \u00b7 2025/26 rates \u00b7 NI per-month"}
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
