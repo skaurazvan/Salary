@@ -30,6 +30,109 @@
   <script type="text/babel">
     const { useState, useMemo, useEffect, useCallback } = React;
 
+    /* ========== PIN LOCK SCREEN ========== */
+    const PIN_HASH = "22222";
+    const SESSION_KEY = "salary-tracker-unlocked";
+
+    function PinScreen({ onUnlock }) {
+      const [pin, setPin] = useState("");
+      const [error, setError] = useState(false);
+      const [shake, setShake] = useState(false);
+
+      const handleDigit = (d) => {
+        if (pin.length >= 5) return;
+        const next = pin + d;
+        setPin(next);
+        setError(false);
+        if (next.length === 5) {
+          if (next === PIN_HASH) {
+            sessionStorage.setItem(SESSION_KEY, "1");
+            setTimeout(() => onUnlock(), 200);
+          } else {
+            setError(true);
+            setShake(true);
+            setTimeout(() => { setPin(""); setShake(false); }, 600);
+          }
+        }
+      };
+
+      const handleDelete = () => {
+        setPin(pin.slice(0, -1));
+        setError(false);
+      };
+
+      return (
+        <div style={{
+          minHeight: "100vh",
+          background: "linear-gradient(160deg, #0a0e17 0%, #131a2e 50%, #0d1220 100%)",
+          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+          fontFamily: "'Space Grotesk', sans-serif", color: "#e2e8f0", padding: 20,
+        }}>
+          <div style={{
+            width: 48, height: 48, borderRadius: 14,
+            background: "linear-gradient(135deg, rgba(56,189,248,0.2), rgba(129,140,248,0.2))",
+            border: "1px solid rgba(56,189,248,0.3)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 22, marginBottom: 20,
+          }}>{"\uD83D\uDD12"}</div>
+
+          <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 6 }}>Salary Tracker</h2>
+          <div style={{ fontSize: 12, color: "#64748b", marginBottom: 30 }}>Enter PIN to continue</div>
+
+          {/* Dots */}
+          <div style={{
+            display: "flex", gap: 14, marginBottom: 10,
+            animation: shake ? "shakeAnim 0.4s ease-in-out" : "none",
+          }}>
+            {[0, 1, 2, 3, 4].map(i => (
+              <div key={i} style={{
+                width: 16, height: 16, borderRadius: "50%",
+                background: i < pin.length
+                  ? (error ? "#f87171" : "linear-gradient(135deg, #38bdf8, #818cf8)")
+                  : "rgba(255,255,255,0.08)",
+                border: "1px solid " + (i < pin.length
+                  ? (error ? "rgba(248,113,113,0.5)" : "rgba(56,189,248,0.4)")
+                  : "rgba(255,255,255,0.12)"),
+                transition: "all 0.15s",
+              }} />
+            ))}
+          </div>
+
+          {error && <div style={{ fontSize: 12, color: "#f87171", marginBottom: 10 }}>Incorrect PIN</div>}
+          {!error && <div style={{ height: 22, marginBottom: 10 }} />}
+
+          {/* Keypad */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, maxWidth: 260 }}>
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9, null, 0, "del"].map((k, i) => {
+              if (k === null) return <div key={i} />;
+              return (
+                <button key={i} onClick={() => k === "del" ? handleDelete() : handleDigit(String(k))} style={{
+                  width: 72, height: 56, borderRadius: 12, border: "none",
+                  background: k === "del" ? "rgba(248,113,113,0.1)" : "rgba(255,255,255,0.06)",
+                  color: k === "del" ? "#f87171" : "#e2e8f0",
+                  fontSize: k === "del" ? 14 : 22, fontWeight: 600,
+                  fontFamily: "'Space Grotesk', sans-serif",
+                  cursor: "pointer",
+                  transition: "background 0.15s",
+                }}>{k === "del" ? "\u232B" : k}</button>
+              );
+            })}
+          </div>
+
+          <style>{`
+            @keyframes shakeAnim {
+              0%, 100% { transform: translateX(0); }
+              20% { transform: translateX(-12px); }
+              40% { transform: translateX(10px); }
+              60% { transform: translateX(-8px); }
+              80% { transform: translateX(6px); }
+            }
+          `}</style>
+        </div>
+      );
+    }
+
+    /* ========== SALARY TRACKER CONSTANTS ========== */
     const MONTHLY_BASE = 3055.36;
     const HOURLY_RATE = 16.79;
     const MONTHLY_SHIFT_ALLOWANCE = 458.29;
@@ -176,8 +279,8 @@
 
     const labelStyle = { fontSize: 10, color: "#64748b", display: "block", marginBottom: 5 };
 
-    /* ---- Main App ---- */
-    function App() {
+    /* ========== MAIN APP ========== */
+    function SalaryApp() {
       const [tab, setTab] = useState("months");
       const [months, setMonths] = useState(loadData);
       const [editing, setEditing] = useState(null);
@@ -339,7 +442,6 @@
                   </div>
                 </div>
 
-                {/* Mode toggle */}
                 <div style={{ display: "flex", gap: 4, marginBottom: 16, background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: 3 }}>
                   {["prediction", "actual"].map(mode => (
                     <button key={mode} onClick={() => toggleMode(editing)} style={{
@@ -351,7 +453,6 @@
                   ))}
                 </div>
 
-                {/* PREDICTION MODE */}
                 {m.mode === "prediction" && (
                   <div>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
@@ -406,7 +507,6 @@
                   </div>
                 )}
 
-                {/* ACTUAL MODE */}
                 {m.mode === "actual" && (
                   <div>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
@@ -582,7 +682,15 @@
       );
     }
 
-    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    /* ========== ROOT WITH PIN GATE ========== */
+    function Root() {
+      const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem(SESSION_KEY) === "1");
+
+      if (!unlocked) return <PinScreen onUnlock={() => setUnlocked(true)} />;
+      return <SalaryApp />;
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<Root />);
   </script>
 </body>
 </html>
