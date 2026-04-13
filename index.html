@@ -199,7 +199,7 @@
       const otPay = ot * OT_RATE;
       const sOt = ot * SHIFT_OT_RATE;
       const bonAmt = MONTHLY_BASE * (bon / 100);
-      const gross = MONTHLY_BASE + sa + otPay + sOt + bonAmt - ext;
+      const gross = MONTHLY_BASE + sa + otPay + sOt + bonAmt;
       const ni = mNI(gross);
       const pen = Math.max(0, gross - PENSION_LOWER) * PENSION_RATE;
       return { gross, sa, otPay, sOt, bonAmt, ext, ni, pen, ot, sick, bon };
@@ -323,7 +323,7 @@
             const mTax = Math.max(0, taxDueNow - runTaxPaid);
             const ni = md.pred.ni;
             const pen = md.pred.pen;
-            const net = md.gross - mTax - ni.total - pen;
+            const net = md.gross - mTax - ni.total - pen - md.pred.ext;
             runTaxPaid += mTax;
             result.push({ ...md, monthTax: mTax, ni, pen, net, cumGross: runGross, cumTaxDue: taxDueNow, cumTaxPaid: runTaxPaid });
           }
@@ -491,14 +491,14 @@
                       {pred.ot > 0 && <R l={"OT (" + pred.ot + "h x " + p(OT_RATE) + ")"} v={p(pred.otPay)} c="#818cf8" />}
                       {pred.ot > 0 && <R l={"Shift OT (" + pred.ot + "h x " + p(SHIFT_OT_RATE) + ")"} v={p(pred.sOt)} c="#a78bfa" />}
                       {pred.bon > 0 && <R l={"Bonus (" + pred.bon + "%)"} v={p(pred.bonAmt)} c="#10b981" />}
-                      {pred.ext > 0 && <R l="Net Deduction" v={p(-pred.ext)} c="#f87171" />}
                       <T l="Taxable Gross" v={p(pred.gross)} />
 
-                      <div style={secHead("#f87171")}>Deductions (Cumulative PAYE)</div>
+                      <div style={secHead("#f87171")}>Deductions</div>
                       <R l="Income Tax" v={"-" + p(mTax)} c="#f87171" b="cumulative" />
                       {ni && ni.lines.map((x, j) => <R key={j} l={x.l} v={"-" + p(x.v)} c="#f87171" b="per month" />)}
                       {pen !== null && <R l="Pension (4%)" v={"-" + p(pen)} c="#fb923c" />}
-                      <T l="Total Deductions" v={"-" + p(mTax + (ni ? ni.total : 0) + (pen || 0))} c="#f87171" />
+                      {pred.ext > 0 && <R l="Net Deduction" v={"-" + p(pred.ext)} c="#f87171" b="after tax" />}
+                      <T l="Total Deductions" v={"-" + p(mTax + (ni ? ni.total : 0) + (pen || 0) + pred.ext)} c="#f87171" />
                     </div>
 
                     <div style={{ textAlign: "center", marginTop: 14, fontSize: 11, color: "#475569" }}>
