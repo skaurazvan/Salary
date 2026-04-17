@@ -930,6 +930,7 @@
       return storage.get(SETTINGS_KEY, {
         theme: "dark",
         notifications: false,
+        autoLockMinutes: 5,
         showTips: true,
       });
     }
@@ -973,6 +974,12 @@
     };
 
     const labelStyle = { fontSize: 10, color: "#64748b", display: "block", marginBottom: 5 };
+
+    // Currency formatter function
+    function p(n) {
+      const a = Math.abs(n);
+      return (n < 0 ? "-" : "") + "£" + a.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    }
 
     /* ========== MAIN APP ========== */
     function SalaryApp() {
