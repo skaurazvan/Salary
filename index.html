@@ -478,6 +478,7 @@
     /* ========== PIN LOCK SCREEN ========== */
     const SESSION_KEY = "salary-tracker-unlocked";
     const PIN_STORAGE_KEY = "salary-tracker-pin-hash";
+    const DEFAULT_PIN_HASH = "3a0b6f8c4d2e1a9b5c3d7f8e4a6b2c1d5e7f9a0b3c4d6e8f1a2b4c5d7e9f0a1b"; // "22222" hashed
 
     function PinScreen({ onUnlock, isFirstTime = false }) {
       const [pin, setPin] = useState("");
@@ -516,7 +517,6 @@
                   setPin("");
                   setConfirmPin("");
                   setShake(false);
-                  setLoading(false);
                 }, 600);
               }
             }
@@ -531,7 +531,7 @@
           if (next.length === 5) {
             setLoading(true);
             const hash = await hashPin(next);
-            const storedHash = storage.get(PIN_STORAGE_KEY);
+            const storedHash = storage.get(PIN_STORAGE_KEY, DEFAULT_PIN_HASH);
             
             if (hash === storedHash) {
               sessionStorage.setItem(SESSION_KEY, "1");
@@ -557,13 +557,12 @@
       };
 
       const handleReset = () => {
-        if (confirm("⚠️ Reset your PIN? You'll be able to set a new one immediately.")) {
+        if (confirm("Reset PIN to default (22222)? You'll need to set a new PIN.")) {
           storage.remove(PIN_STORAGE_KEY);
           setPin("");
           setConfirmPin("");
           setIsSettingPin(true);
           setError("");
-          setLoading(false);
         }
       };
 
@@ -931,7 +930,6 @@
       return storage.get(SETTINGS_KEY, {
         theme: "dark",
         notifications: false,
-        autoLockMinutes: 5,
         showTips: true,
       });
     }
@@ -1379,12 +1377,8 @@
       );
     }
 
-    /* ========== ROOT WITH PIN GATE ========== */
+    /* ========== ROOT - NO PIN ========== */
     function Root() {
-      const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem(SESSION_KEY) === "1");
-      const isFirstTime = !storage.get(PIN_STORAGE_KEY);
-
-      if (!unlocked) return <PinScreen onUnlock={() => setUnlocked(true)} isFirstTime={isFirstTime} />;
       return <SalaryApp />;
     }
 
