@@ -105,50 +105,26 @@
 
     /* Light Theme */
     [data-theme="light"] {
-      /* Backgrounds */
-      --color-bg-primary: #f8fafc;
-      --color-bg-secondary: #ffffff;
-      --color-bg-tertiary: #e2e8f0;
+      --color-bg-primary: #ffffff;
+      --color-bg-secondary: #f8fafc;
+      --color-bg-tertiary: #f1f5f9;
       --color-bg-elevated: #ffffff;
-      --color-bg-overlay: rgba(255, 255, 255, 0.98);
+      --color-bg-overlay: rgba(255, 255, 255, 0.95);
       
-      /* Text - Much darker for better contrast */
       --color-text-primary: #0f172a;
-      --color-text-secondary: #1e293b;
-      --color-text-tertiary: #475569;
-      --color-text-quaternary: #64748b;
-      --color-text-disabled: #94a3b8;
+      --color-text-secondary: #334155;
+      --color-text-tertiary: #64748b;
+      --color-text-quaternary: #94a3b8;
+      --color-text-disabled: #cbd5e1;
       
-      /* Borders */
-      --color-border-primary: rgba(0, 0, 0, 0.15);
-      --color-border-secondary: rgba(0, 0, 0, 0.08);
+      --color-border-primary: rgba(0, 0, 0, 0.1);
+      --color-border-secondary: rgba(0, 0, 0, 0.06);
       
-      /* Shadows */
-      --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.06);
-      --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.1);
-      --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.15);
-      --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.2);
-      --shadow-xl: 0 12px 24px rgba(0, 0, 0, 0.25);
-      
-      /* Primary colors - darker for better visibility */
-      --color-primary: #1d4ed8;
-      --color-primary-light: #2563eb;
-      
-      /* Success - darker green */
-      --color-success: #047857;
-      --color-success-light: #059669;
-      
-      /* Danger - keep good contrast */
-      --color-danger: #b91c1c;
-      --color-danger-light: #dc2626;
-      
-      /* Warning - darker orange */
-      --color-warning: #b45309;
-      --color-warning-light: #d97706;
-      
-      /* Info - darker cyan */
-      --color-info: #0e7490;
-      --color-info-light: #0891b2;
+      --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
+      --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.08);
+      --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.12);
+      --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.15);
+      --shadow-xl: 0 12px 24px rgba(0, 0, 0, 0.18);
     }
 
     /* ========== GLOBAL STYLES ========== */
@@ -170,11 +146,6 @@
       font-size: var(--font-size-base);
       line-height: var(--line-height-normal);
       transition: background-color var(--transition-base), color var(--transition-base);
-    }
-    
-    /* Light theme background adjustments */
-    [data-theme="light"] body {
-      background: linear-gradient(160deg, #f8fafc 0%, #e2e8f0 50%, #f1f5f9 100%);
     }
 
     /* ========== FORM ELEMENTS ========== */
@@ -507,7 +478,6 @@
     /* ========== PIN LOCK SCREEN ========== */
     const SESSION_KEY = "salary-tracker-unlocked";
     const PIN_STORAGE_KEY = "salary-tracker-pin-hash";
-    const DEFAULT_PIN_HASH = "3a0b6f8c4d2e1a9b5c3d7f8e4a6b2c1d5e7f9a0b3c4d6e8f1a2b4c5d7e9f0a1b"; // "22222" hashed
 
     function PinScreen({ onUnlock, isFirstTime = false }) {
       const [pin, setPin] = useState("");
@@ -546,6 +516,7 @@
                   setPin("");
                   setConfirmPin("");
                   setShake(false);
+                  setLoading(false);
                 }, 600);
               }
             }
@@ -560,7 +531,7 @@
           if (next.length === 5) {
             setLoading(true);
             const hash = await hashPin(next);
-            const storedHash = storage.get(PIN_STORAGE_KEY, DEFAULT_PIN_HASH);
+            const storedHash = storage.get(PIN_STORAGE_KEY);
             
             if (hash === storedHash) {
               sessionStorage.setItem(SESSION_KEY, "1");
@@ -586,12 +557,13 @@
       };
 
       const handleReset = () => {
-        if (confirm("Reset PIN to default (22222)? You'll need to set a new PIN.")) {
+        if (confirm("⚠️ Reset your PIN? You'll be able to set a new one immediately.")) {
           storage.remove(PIN_STORAGE_KEY);
           setPin("");
           setConfirmPin("");
           setIsSettingPin(true);
           setError("");
+          setLoading(false);
         }
       };
 
@@ -603,7 +575,7 @@
       return (
         <div style={{
           minHeight: "100vh",
-          background: "var(--color-bg-primary)",
+          background: "linear-gradient(160deg, var(--color-bg-primary) 0%, #1a2332 50%, var(--color-bg-primary) 100%)",
           display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
           fontFamily: "var(--font-display)", color: "var(--color-text-primary)", 
           padding: "var(--space-5)",
@@ -969,51 +941,40 @@
     }
 
     /* ---- Sub-components ---- */
-    function R({ l, v, c = "var(--color-text-primary)", b }) {
+    function R({ l, v, c = "#e2e8f0", b }) {
       return (
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "var(--space-2) var(--space-4)", borderBottom: "1px solid var(--color-border-secondary)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-            <span style={{ fontSize: "var(--font-size-sm)", color: "var(--color-text-tertiary)" }}>{l}</span>
-            {b && <span style={{ fontSize: "var(--font-size-xs)", color: "var(--color-text-quaternary)", background: "var(--color-bg-tertiary)", padding: "2px 6px", borderRadius: "var(--radius-sm)" }}>{b}</span>}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 14px", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 12, color: "#94a3b8" }}>{l}</span>
+            {b && <span style={{ fontSize: 8, color: "#64748b", background: "rgba(255,255,255,0.06)", padding: "2px 5px", borderRadius: 4 }}>{b}</span>}
           </div>
-          <span style={{ fontSize: "var(--font-size-sm)", fontWeight: 600, color: c, fontFamily: "var(--font-mono)" }}>{v}</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: c }}>{v}</span>
         </div>
       );
     }
 
-    function T({ l, v, c = "var(--color-text-primary)" }) {
+    function T({ l, v, c = "#e2e8f0" }) {
       return (
-        <div style={{ display: "flex", justifyContent: "space-between", padding: "var(--space-3) var(--space-4)", background: "var(--color-bg-tertiary)", borderBottom: "1px solid var(--color-border-primary)" }}>
-          <span style={{ fontSize: "var(--font-size-sm)", fontWeight: 700, color: "var(--color-text-primary)" }}>{l}</span>
-          <span style={{ fontSize: "var(--font-size-base)", fontWeight: 700, color: c, fontFamily: "var(--font-mono)" }}>{v}</span>
+        <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 14px", background: "rgba(255,255,255,0.04)", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#e2e8f0" }}>{l}</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: c }}>{v}</span>
         </div>
       );
     }
 
     const secHead = (color) => ({
-      padding: "var(--space-3) var(--space-4)", 
-      borderBottom: "1px solid var(--color-border-secondary)",
-      fontSize: "var(--font-size-xs)", 
-      fontWeight: 600, 
-      color,
-      fontFamily: "var(--font-display)", 
-      textTransform: "uppercase", 
-      letterSpacing: 1,
+      padding: "10px 14px", borderBottom: "1px solid rgba(255,255,255,0.06)",
+      fontSize: 11, fontWeight: 600, color,
+      fontFamily: "'Space Grotesk', sans-serif", textTransform: "uppercase", letterSpacing: 1,
     });
 
     const cardStyle = {
-      background: "var(--color-bg-secondary)",
-      border: "1px solid var(--color-border-primary)",
-      borderRadius: "var(--radius-lg)", 
-      overflow: "hidden",
+      background: "rgba(255,255,255,0.03)",
+      border: "1px solid rgba(255,255,255,0.08)",
+      borderRadius: 12, overflow: "hidden",
     };
 
-    const labelStyle = { 
-      fontSize: "var(--font-size-xs)", 
-      color: "var(--color-text-quaternary)", 
-      display: "block", 
-      marginBottom: "var(--space-2)",
-    };
+    const labelStyle = { fontSize: 10, color: "#64748b", display: "block", marginBottom: 5 };
 
     /* ========== MAIN APP ========== */
     function SalaryApp() {
@@ -1083,11 +1044,8 @@
       return (
         <div style={{
           minHeight: "100vh",
-          background: "var(--color-bg-primary)",
-          color: "var(--color-text-primary)", 
-          fontFamily: "var(--font-body)", 
-          padding: "var(--space-5) var(--space-4)",
-          transition: "background var(--transition-base)",
+          background: "linear-gradient(160deg, #0a0e17 0%, #131a2e 50%, #0d1220 100%)",
+          color: "#e2e8f0", fontFamily: "'JetBrains Mono', 'SF Mono', monospace", padding: "20px 16px",
         }}>
           {/* Header */}
           <div style={{ textAlign: "center", marginBottom: 20 }}>
@@ -1424,8 +1382,9 @@
     /* ========== ROOT WITH PIN GATE ========== */
     function Root() {
       const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem(SESSION_KEY) === "1");
+      const isFirstTime = !storage.get(PIN_STORAGE_KEY);
 
-      if (!unlocked) return <PinScreen onUnlock={() => setUnlocked(true)} />;
+      if (!unlocked) return <PinScreen onUnlock={() => setUnlocked(true)} isFirstTime={isFirstTime} />;
       return <SalaryApp />;
     }
 
